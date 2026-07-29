@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from math import asin, cos, radians, sin, sqrt
 from typing import Any
 
@@ -337,6 +338,7 @@ class ZillAPIConnector:
         comparables: list[dict[str, Any]] = []
         subject_sqft = float(sqft) if sqft not in (None, 0) else None
         subject_year = property_record.get("yearBuilt")
+        subject_baths = property_record.get("bathrooms")
         subject_zpid = str(property_record.get("zpid") or "")
 
         for row in rows:
@@ -383,12 +385,18 @@ class ZillAPIConnector:
                     if isinstance(row.get("coordinates"), dict)
                     else {}
                 )
-            comp_latitude = _first_present(coordinates, "latitude") or _first_present(
-                home_info, "latitude"
+            comp_latitude = (
+                _first_present(coordinates, "latitude", "lat")
+                or _first_present(row, "latitude", "lat")
+                or _first_present(home_info, "latitude", "lat")
             )
             comp_longitude = _first_present(
-                coordinates, "longitude"
-            ) or _first_present(home_info, "longitude")
+                coordinates, "longitude", "lng", "lon"
+            ) or _first_present(
+                row, "longitude", "lng", "lon"
+            ) or _first_present(
+                home_info, "longitude", "lng", "lon"
+            )
 
             if (
                 price is None
@@ -396,14 +404,17 @@ class ZillAPIConnector:
                 or comp_longitude is None
             ):
                 continue
+            # Progressive CMA matching still needs broad outer guardrails.
+            # These remove fundamentally different properties while allowing
+            # imperfect-but-useful sales to receive a lower similarity score.
             if subject_sqft and comp_sqft:
-                if abs(float(comp_sqft) - subject_sqft) / subject_sqft > 0.25:
+                if abs(float(comp_sqft) - subject_sqft) / subject_sqft > 0.50:
                     continue
             if beds is not None and comp_beds is not None:
-                if abs(float(comp_beds) - float(beds)) > 1:
+                if abs(float(comp_beds) - float(beds)) > 2:
                     continue
             if subject_year and comp_year:
-                if abs(int(comp_year) - int(subject_year)) > 20:
+                if abs(int(comp_year) - int(subject_year)) > 40:
                     continue
 
             distance = self._distance_miles(
@@ -414,6 +425,79 @@ class ZillAPIConnector:
             )
             if distance > radius_miles:
                 continue
+
+            sold_date = _first_present(row, "dateSold", "lastSoldDate") or _first_present(
+                home_info, "dateSold", "lastSoldDate"
+            )
+            score = 100.0
+            score -= min(30.0, distance * 6.0)
+
+            sqft_difference_ratio = None
+            if subject_sqft and comp_sqft:
+                sqft_difference_ratio = abs(
+                    float(comp_sqft) - subject_sqft
+                ) / subject_sqft
+                score -= min(25.0, sqft_difference_ratio * 60.0)
+            else:
+                score -= 8.0
+
+            if beds is not None and comp_beds is not None:
+                score -= min(
+                    16.0, abs(float(comp_beds) - float(beds)) * 8.0
+                )
+            else:
+                score -= 5.0
+
+            if subject_baths is not None and comp_baths is not None:
+                score -= min(
+                    12.0,
+                    abs(float(comp_baths) - float(subject_baths)) * 5.0,
+                )
+            else:
+                score -= 4.0
+
+            if subject_year and comp_year:
+                score -= min(
+                    15.0, abs(int(comp_year) - int(subject_year)) * 0.4
+                )
+            else:
+                score -= 5.0
+
+            if sold_date:
+                try:
+                    parsed_sold_date = datetime.fromisoformat(
+                        str(sold_date).replace("Z", "+00:00")
+                    )
+                    if parsed_sold_date.tzinfo is None:
+                        parsed_sold_date = parsed_sold_date.replace(
+                            tzinfo=timezone.utc
+                        )
+                    age_days = max(
+                        0,
+                        (
+                            datetime.now(timezone.utc) - parsed_sold_date
+                        ).days,
+                    )
+                    if age_days > 180:
+                        score -= min(20.0, (age_days - 180) / 30 * 1.5)
+                except (TypeError, ValueError):
+                    score -= 4.0
+            else:
+                score -= 6.0
+
+            score = round(max(0.0, score), 1)
+            match_quality = (
+                "strong"
+                if score >= 80
+                else "good"
+                if score >= 65
+                else "supporting"
+            )
+            adjusted_value = round(float(price))
+            if subject_sqft and comp_sqft and float(comp_sqft) > 0:
+                adjusted_value = round(
+                    (float(price) / float(comp_sqft)) * subject_sqft
+                )
 
             address = _first_present(row, "address")
             if isinstance(address, dict):
@@ -428,6 +512,9 @@ class ZillAPIConnector:
                     "state": _first_present(row, "addressState")
                     or _first_present(home_info, "state"),
                     "price": round(float(price)),
+                    "cmaAdjustedValue": adjusted_value,
+                    "cmaScore": score,
+                    "matchQuality": match_quality,
                     "squareFootage": round(float(comp_sqft))
                     if comp_sqft is not None
                     else None,
@@ -435,8 +522,7 @@ class ZillAPIConnector:
                     "bathrooms": comp_baths,
                     "yearBuilt": comp_year,
                     "distance": round(distance, 3),
-                    "soldDate": _first_present(row, "dateSold", "lastSoldDate")
-                    or _first_present(home_info, "dateSold", "lastSoldDate"),
+                    "soldDate": sold_date,
                     "status": _first_present(row, "statusType")
                     or _first_present(home_info, "homeStatus")
                     or "RECENTLY_SOLD",
@@ -448,12 +534,19 @@ class ZillAPIConnector:
                 }
             )
 
-        comparables.sort(key=lambda item: item["distance"])
+        comparables.sort(
+            key=lambda item: (-item["cmaScore"], item["distance"])
+        )
         return {
             "source": self.name,
             "endpoint": "search/recently-sold",
             "status": "ok" if comparables else "no_match",
             "comparables": comparables,
             "raw_count": len(rows),
+            "methodology": (
+                "CMA-style ranking using sale proximity, recency, living-area "
+                "similarity, bedrooms, bathrooms, year built, and an indicated "
+                "value based on each comparable's sold price per square foot."
+            ),
             "raw": payload,
         }

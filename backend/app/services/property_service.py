@@ -283,7 +283,10 @@ def _median_comparable_value(
     radius_miles: float,
 ) -> tuple[int | None, int]:
     prices = [
-        float(comparable["price"])
+        float(
+            comparable.get("cmaAdjustedValue")
+            or comparable["price"]
+        )
         for comparable in comparables
         if comparable.get("price") is not None
         and comparable.get("distance") is not None
@@ -945,7 +948,7 @@ def analyze_property(db: Session, payload: PropertyAnalyzeRequest) -> Property:
     verified_payload["nearby_3_mile_count"] = nearby_3_count
     verified_payload["nearby_5_mile_count"] = nearby_5_count
     verified_payload["nearby_metric"] = (
-        "median sold price"
+        "CMA-style indicated value"
         if verified_payload.get("comparables_source") == "ZillAPI recently sold"
         else "median comparable value"
     )

@@ -533,8 +533,8 @@ export default function Page() {
   const marketCards = useMemo(
     () => {
       const comparableLabel =
-        selected.market.nearbyMetric === "median sold price"
-          ? "Median Sold"
+        selected.market.nearbyMetric === "CMA-style indicated value"
+          ? "CMA Indicated Value"
           : "Median Comparable Value";
       return [
       { label: "Listing Price", value: money(selected.market.listingPrice) },
@@ -1021,8 +1021,8 @@ export default function Page() {
                 title="Nearby Value Comparison"
                 subtitle={
                   comparablesRequested
-                    ? "Qualified recently sold records returned by ZillAPI"
-                    : "Comparables are not loaded automatically"
+                    ? "Optional CMA-style analysis of recently sold ZillAPI records"
+                    : "CMA records are not loaded automatically"
                 }
               />
               <div
@@ -1038,9 +1038,11 @@ export default function Page() {
                 }}
               >
                 <div>
-                  Loading comparables may use up to 5 ZillAPI credits. Returned
-                  records must still pass distance, size, bedroom, age, price,
-                  and coordinate checks, so fewer than five—or zero—may qualify.
+                  Running the CMA may use up to 5 ZillAPI credits. The analysis
+                  ranks sold records by proximity, recency, square footage,
+                  bedrooms, bathrooms, and age, then compares price per square
+                  foot. It is optional and never runs during a normal property
+                  search.
                 </div>
                 <button
                   type="button"
@@ -1069,8 +1071,8 @@ export default function Page() {
                   {comparablesLoading
                     ? "Loading Comparables..."
                     : comparablesRequested
-                    ? "Refresh Comparables (up to 5 credits)"
-                    : "Load Comparables (up to 5 credits)"}
+                    ? "Refresh CMA (up to 5 credits)"
+                    : "Run CMA (up to 5 credits)"}
                 </button>
               </div>
               {comparablesRequested &&
@@ -1082,9 +1084,9 @@ export default function Page() {
                       fontSize: 13,
                     }}
                   >
-                    ZillAPI returned no records that passed all comparable
-                    checks. This does not necessarily mean no nearby sales
-                    exist.
+                    ZillAPI returned no usable sold records with both a price
+                    and location. This does not necessarily mean no nearby
+                    sales exist.
                   </div>
                 )}
               {[

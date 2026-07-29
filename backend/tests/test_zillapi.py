@@ -109,3 +109,6 @@ def test_zillapi_recent_sales_are_filtered_and_given_exact_distances(monkeypatch
     assert result["comparables"][0]["price"] == 700_000
     assert 0 < result["comparables"][0]["distance"] < 1
     assert result["comparables"][0]["pricePerSquareFoot"] == 269.23
+    assert result["comparables"][0]["cmaAdjustedValue"] == 674_692
+    assert result["comparables"][0]["cmaScore"] >= 80
+    assert result["comparables"][0]["matchQuality"] == "strong"
