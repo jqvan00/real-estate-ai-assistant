@@ -13,7 +13,9 @@ class Settings(BaseSettings):
 
     # External API Keys
     google_api_key: str | None = None
-    gemini_model: str = "gemini-3.6-flash"  # FREE! Fast and powerful
+    # Flash-Lite is a better fit for short property briefings and is less
+    # capacity-sensitive than the heavier Flash model.
+    gemini_model: str = "gemini-3.5-flash-lite"
     census_api_key: str | None = None  # Free Census data API access
 
     rentcast_api_key: str | None = None
