@@ -6,12 +6,19 @@ __pycache__/
 .ruff_cache/
 .venv/
 .env
+.env*.local
+*.egg-info/
+.tools/
+.python/
+.uv-cache/
 
 # Node
 node_modules/
+.npm-cache/
 .next/
 dist/
 out/
+npm-debug.log*
 
 # OS
 .DS_Store
@@ -19,7 +26,13 @@ Thumbs.db
 
 # Logs
 *.log
+/tmp/
 
 # Local databases / exports
 *.sqlite3
 *.db
+
+# Audio files (from voice interactions)
+*.wav
+*.mp3
+audio_recordings/

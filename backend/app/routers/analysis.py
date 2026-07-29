@@ -2,7 +2,6 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
-from app.models.property_profile import PropertyProfile
 from app.services.analysis_service import get_property_analysis
 
 router = APIRouter()

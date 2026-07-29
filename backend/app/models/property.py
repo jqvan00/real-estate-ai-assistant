@@ -15,8 +15,22 @@ class Property(Base):
     zip_code: Mapped[str | None] = mapped_column(String(20), nullable=True)
     verified_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
 
-    raw_sources = relationship("PropertyRawSource", back_populates="property", cascade="all, delete-orphan")
-    profile = relationship("PropertyProfile", back_populates="property", uselist=False, cascade="all, delete-orphan")
+    raw_sources = relationship(
+        "PropertyRawSource",
+        back_populates="property",
+        cascade="all, delete-orphan",
+    )
+    verified_profile = relationship(
+        "PropertyVerifiedProfile",
+        back_populates="property",
+        uselist=False,
+        cascade="all, delete-orphan",
+    )
+    api_cache_entries = relationship(
+        "PropertyApiCache",
+        back_populates="property",
+        cascade="all, delete-orphan",
+    )
     reports = relationship("Report", back_populates="property")
-    conversations = relationship("Conversation", back_populates="property")
+    conversations = relationship("Conversation", back_populates="prop")
     saved_by = relationship("SavedProperty", back_populates="property")

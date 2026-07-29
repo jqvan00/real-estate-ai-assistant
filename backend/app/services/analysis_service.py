@@ -3,12 +3,13 @@ from __future__ import annotations
 from sqlalchemy.orm import Session
 
 from app.models.property import Property
-from app.models.property_profile import PropertyProfile
+from app.models.property_verified_profile import PropertyVerifiedProfile
 
 
 def get_property_analysis(db: Session, property_id: int) -> dict:
     prop = db.query(Property).filter(Property.id == property_id).first()
-    profile = db.query(PropertyProfile).filter(PropertyProfile.property_id == property_id).first()
+    profile = db.query(PropertyVerifiedProfile).filter(PropertyVerifiedProfile.property_id == property_id).first()
+
     if not prop or not profile:
         return {"status": "not_found"}
 

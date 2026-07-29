@@ -13,5 +13,5 @@ class Conversation(Base):
     topic: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     user = relationship("User", back_populates="conversations")
-    property = relationship("Property", back_populates="conversations")
+    prop = relationship("Property", back_populates="conversations")
     messages = relationship("Message", back_populates="conversation", cascade="all, delete-orphan")
