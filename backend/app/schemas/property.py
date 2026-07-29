@@ -4,6 +4,8 @@ from pydantic import BaseModel
 class PropertyAnalyzeRequest(BaseModel):
     address: str
     listing_url: str | None = None
+    include_comparables: bool = False
+    max_comparables: int = 5
 
 
 class PropertyAnalyzeResponse(BaseModel):

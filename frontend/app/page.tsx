@@ -522,6 +522,8 @@ export default function Page() {
   const [listingUrl, setListingUrl] = useState("");
   const [selected, setSelected] = useState<PropertyView>(blankProperty);
   const [loading, setLoading] = useState(false);
+  const [comparablesLoading, setComparablesLoading] = useState(false);
+  const [comparablesRequested, setComparablesRequested] = useState(false);
   const [error, setError] = useState("");
   const [lastUpdated, setLastUpdated] = useState<string>("");
   const [activeTab, setActiveTab] = useState<
@@ -609,6 +611,7 @@ export default function Page() {
         body: JSON.stringify({
           address: addressToSearch || "",  // Can be empty if URL provided
           listing_url: urlToSearch || null,
+          include_comparables: false,
         }),
       });
 
@@ -626,10 +629,57 @@ export default function Page() {
         toText(data?.verified_profile?.formatted_address) || addressToSearch
       );
       setLastUpdated(new Date().toLocaleString());
+      setComparablesRequested(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong");
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function loadComparables() {
+    if (!selected.propertyId) {
+      setError("Search for a property before loading comparables.");
+      return;
+    }
+
+    setComparablesLoading(true);
+    setError("");
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/properties/analyze`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          address: searchAddress.trim() || selected.address,
+          listing_url: listingUrl.trim() || selected.listingUrl || null,
+          include_comparables: true,
+          max_comparables: 5,
+        }),
+      });
+
+      if (!response.ok) {
+        const text = await response.text();
+        throw new Error(text || "Comparable lookup failed");
+      }
+
+      const data = (await response.json()) as AnalyzeApiResponse;
+      setSelected((current) =>
+        buildPropertyView(
+          data,
+          current,
+          searchAddress.trim() || selected.address,
+          listingUrl.trim() || selected.listingUrl
+        )
+      );
+      setComparablesRequested(true);
+      setLastUpdated(new Date().toLocaleString());
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Comparable lookup failed");
+    } finally {
+      setComparablesLoading(false);
     }
   }
 
@@ -639,6 +689,7 @@ export default function Page() {
     setSelected(blankProperty);
     setError("");
     setLastUpdated("");
+    setComparablesRequested(false);
     setActiveTab("summary");
   }
 
@@ -968,8 +1019,74 @@ export default function Page() {
             <div style={{ padding: 22 }}>
               <SectionTitle
                 title="Nearby Value Comparison"
-                subtitle="Median RentCast AVM comparable values measured from this property"
+                subtitle={
+                  comparablesRequested
+                    ? "Qualified recently sold records returned by ZillAPI"
+                    : "Comparables are not loaded automatically"
+                }
               />
+              <div
+                style={{
+                  marginBottom: 16,
+                  padding: 14,
+                  borderRadius: 18,
+                  border: "1px solid rgba(250,204,21,0.24)",
+                  background: "rgba(250,204,21,0.07)",
+                  color: "rgba(255,255,255,0.76)",
+                  fontSize: 13,
+                  lineHeight: 1.6,
+                }}
+              >
+                <div>
+                  Loading comparables may use up to 5 ZillAPI credits. Returned
+                  records must still pass distance, size, bedroom, age, price,
+                  and coordinate checks, so fewer than five—or zero—may qualify.
+                </div>
+                <button
+                  type="button"
+                  onClick={loadComparables}
+                  disabled={!selected.propertyId || comparablesLoading}
+                  style={{
+                    marginTop: 12,
+                    padding: "11px 16px",
+                    borderRadius: 14,
+                    border: 0,
+                    background:
+                      !selected.propertyId || comparablesLoading
+                        ? "rgba(255,255,255,0.16)"
+                        : "#facc15",
+                    color:
+                      !selected.propertyId || comparablesLoading
+                        ? "rgba(255,255,255,0.45)"
+                        : "#1c1917",
+                    fontWeight: 900,
+                    cursor:
+                      !selected.propertyId || comparablesLoading
+                        ? "not-allowed"
+                        : "pointer",
+                  }}
+                >
+                  {comparablesLoading
+                    ? "Loading Comparables..."
+                    : comparablesRequested
+                    ? "Refresh Comparables (up to 5 credits)"
+                    : "Load Comparables (up to 5 credits)"}
+                </button>
+              </div>
+              {comparablesRequested &&
+                selected.market.nearby5MileCount === 0 && (
+                  <div
+                    style={{
+                      marginBottom: 14,
+                      color: "rgba(255,255,255,0.58)",
+                      fontSize: 13,
+                    }}
+                  >
+                    ZillAPI returned no records that passed all comparable
+                    checks. This does not necessarily mean no nearby sales
+                    exist.
+                  </div>
+                )}
               {[
                 [
                   "1 Mile Radius",

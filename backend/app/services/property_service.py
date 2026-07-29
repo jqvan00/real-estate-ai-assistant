@@ -459,11 +459,18 @@ def analyze_property(db: Session, payload: PropertyAnalyzeRequest) -> Property:
             }
 
         zillapi_comps: dict[str, Any] | None = None
-        if rentcast_record.get("status") == "matched":
+        comparable_limit = min(max(payload.max_comparables, 1), 5)
+        comparable_cache_endpoint = (
+            f"search/recently-sold:{comparable_limit}"
+        )
+        if (
+            payload.include_comparables
+            and rentcast_record.get("status") == "matched"
+        ):
             cached_comps = _get_cached_response(
                 db,
                 "zillapi",
-                "search/recently-sold",
+                comparable_cache_endpoint,
                 search_address,
             )
             if cached_comps:
@@ -472,7 +479,8 @@ def analyze_property(db: Session, payload: PropertyAnalyzeRequest) -> Property:
                 try:
                     zillapi_comps = (
                         ZillAPIConnector().fetch_recently_sold_comparables(
-                            rentcast_record.get("record", {})
+                            rentcast_record.get("record", {}),
+                            max_items=comparable_limit,
                         )
                     )
                 except Exception as exc:
@@ -488,7 +496,7 @@ def analyze_property(db: Session, payload: PropertyAnalyzeRequest) -> Property:
                     db,
                     prop.id,
                     "zillapi",
-                    "search/recently-sold",
+                    comparable_cache_endpoint,
                     search_address,
                     zillapi_comps,
                 )
@@ -505,6 +513,8 @@ def analyze_property(db: Session, payload: PropertyAnalyzeRequest) -> Property:
         # RentCast is now only a fallback when ZillAPI returns no usable closed
         # sales. Its Zestimate-equivalent never overrides ZillAPI's value.
         if (
+            payload.include_comparables
+            and
             settings.rentcast_api_key
             and (
                 not zillapi_comps
@@ -966,6 +976,20 @@ def analyze_property(db: Session, payload: PropertyAnalyzeRequest) -> Property:
                 continue
             if verified_payload.get(field) in (None, "", []):
                 verified_payload[field] = previous_value
+
+    # A normal property lookup intentionally does not request paid comparable
+    # records. Clear any older comparable snapshot so the UI never implies
+    # that comparables were refreshed as part of the subject-property lookup.
+    if not payload.include_comparables:
+        verified_payload["comparables_count"] = 0
+        verified_payload["comparables_source"] = None
+        verified_payload["nearby_1_mile"] = None
+        verified_payload["nearby_3_mile"] = None
+        verified_payload["nearby_5_mile"] = None
+        verified_payload["nearby_1_mile_count"] = 0
+        verified_payload["nearby_3_mile_count"] = 0
+        verified_payload["nearby_5_mile_count"] = 0
+        verified_payload["nearby_metric"] = "not requested"
 
     schools_payload = _get_cached_response(
         db,
