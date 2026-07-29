@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL || "http://127.0.0.1:8000";
@@ -21,6 +21,7 @@ export default function VoiceChat({ propertyId }: VoiceChatProps) {
   const [loading, setLoading] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
+  const speechRunRef = useRef(0);
 
   // A conversation is tied to one property. Clear old messages when a new
   // search selects a different property so its facts never leak into Q&A.
@@ -32,8 +33,53 @@ export default function VoiceChat({ propertyId }: VoiceChatProps) {
   }, [propertyId]);
 
   const stopSpeaking = () => {
+    speechRunRef.current += 1;
     window.speechSynthesis?.cancel();
     setIsSpeaking(false);
+  };
+
+  const speakText = (text: string) => {
+    if (!("speechSynthesis" in window) || !("SpeechSynthesisUtterance" in window)) {
+      throw new Error("Audio playback is not supported by this browser.");
+    }
+
+    const speech = window.speechSynthesis;
+    const runId = ++speechRunRef.current;
+    const chunks =
+      text
+        .match(/[^.!?\n•]+(?:[.!?]+|(?=\n|•)|$)/g)
+        ?.map((part) => part.replace(/^[\s•]+/, "").trim())
+        .filter(Boolean)
+        .flatMap((part) => {
+          if (part.length <= 220) return [part];
+          return part.match(/.{1,220}(?:\s|$)/g)?.map((item) => item.trim()) || [part];
+        }) || [text];
+
+    speech.cancel();
+    setIsSpeaking(true);
+
+    const speakChunk = (index: number) => {
+      if (runId !== speechRunRef.current) return;
+      if (index >= chunks.length) {
+        setIsSpeaking(false);
+        return;
+      }
+
+      const utterance = new SpeechSynthesisUtterance(chunks[index]);
+      utterance.rate = 0.9;
+      utterance.onend = () => speakChunk(index + 1);
+      utterance.onerror = (event) => {
+        setIsSpeaking(false);
+        if (event.error !== "canceled" && event.error !== "interrupted") {
+          alert(
+            "Your browser blocked audio playback. Make sure your phone is not muted, turn up media volume, and tap Listen to AI Briefing again."
+          );
+        }
+      };
+      speech.speak(utterance);
+    };
+
+    speakChunk(0);
   };
 
   // Play AI Briefing using browser TTS (FREE!)
@@ -43,25 +89,34 @@ export default function VoiceChat({ propertyId }: VoiceChatProps) {
       return;
     }
 
+    // Mobile Safari can require speech to be activated during the original tap,
+    // before the briefing's network request finishes.
+    if ("speechSynthesis" in window && "SpeechSynthesisUtterance" in window) {
+      window.speechSynthesis.cancel();
+      window.speechSynthesis.resume();
+      const unlockUtterance = new SpeechSynthesisUtterance(" ");
+      unlockUtterance.volume = 0;
+      window.speechSynthesis.speak(unlockUtterance);
+    }
+
     setLoading(true);
     try {
       const response = await fetch(
         `${API_BASE_URL}/voice/properties/${propertyId}/briefing`
       );
 
-      if (!response.ok) throw new Error("Failed to generate briefing");
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => null);
+        throw new Error(
+          errorData?.detail ||
+            "The AI briefing is temporarily unavailable. Please try again."
+        );
+      }
 
       const data = await response.json();
       const briefingText = data.briefing;
 
-      // Use browser's TTS (FREE!)
-      const utterance = new SpeechSynthesisUtterance(briefingText);
-      utterance.rate = 0.9;
-      utterance.onstart = () => setIsSpeaking(true);
-      utterance.onend = () => setIsSpeaking(false);
-      utterance.onerror = () => setIsSpeaking(false);
-      window.speechSynthesis.cancel();
-      window.speechSynthesis.speak(utterance);
+      speakText(briefingText);
 
       // Add to conversation
       setMessages((prev) => [

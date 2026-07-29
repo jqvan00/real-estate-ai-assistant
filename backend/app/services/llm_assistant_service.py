@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import time
 from typing import Any
 
 from google import genai
@@ -22,6 +23,34 @@ class PropertyAssistant:
         self.client = genai.Client(api_key=settings.google_api_key)
         self.model_id = settings.gemini_model
 
+    def _generate_content(self, prompt: str):
+        """Call Gemini and retry short-lived capacity/rate-limit failures."""
+        attempts = 3
+        for attempt in range(attempts):
+            try:
+                return self.client.models.generate_content(
+                    model=self.model_id,
+                    contents=prompt,
+                )
+            except Exception as exc:
+                message = str(exc).lower()
+                temporary = any(
+                    marker in message
+                    for marker in (
+                        "503",
+                        "unavailable",
+                        "high demand",
+                        "429",
+                        "resource_exhausted",
+                        "rate limit",
+                    )
+                )
+                if not temporary or attempt == attempts - 1:
+                    raise RuntimeError(
+                        "The AI assistant is temporarily unavailable. Please try again in a moment."
+                    ) from exc
+                time.sleep(attempt + 1)
+
     def generate_property_briefing(self, verified_profile: dict[str, Any]) -> str:
         """
         Generate a spoken briefing about a property.
@@ -37,15 +66,8 @@ class PropertyAssistant:
         """
         prompt = self._build_briefing_prompt(verified_profile)
 
-        try:
-            response = self.client.models.generate_content(
-                model=self.model_id,
-                contents=prompt
-            )
-            return response.text if response.text else "No briefing available."
-
-        except Exception as e:
-            return f"Error generating briefing: {e}"
+        response = self._generate_content(prompt)
+        return response.text if response.text else "No briefing available."
 
     def answer_question(
         self,
@@ -88,15 +110,8 @@ class PropertyAssistant:
         # Add current question
         full_prompt = f"{system_prompt}\nConversation so far:\n{conversation_text}\nUser: {question}\nAssistant:"
 
-        try:
-            response = self.client.models.generate_content(
-                model=self.model_id,
-                contents=full_prompt
-            )
-            return response.text if response.text else "I'm not sure how to answer that."
-
-        except Exception as e:
-            return f"Error answering question: {e}"
+        response = self._generate_content(full_prompt)
+        return response.text if response.text else "I'm not sure how to answer that."
 
     def _build_briefing_prompt(self, verified_profile: dict[str, Any]) -> str:
         """Build the prompt for generating a property briefing."""
