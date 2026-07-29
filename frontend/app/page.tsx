@@ -532,10 +532,6 @@ export default function Page() {
 
   const marketCards = useMemo(
     () => {
-      const comparableLabel =
-        selected.market.nearbyMetric === "CMA-style indicated value"
-          ? "CMA Indicated Value"
-          : "Median Comparable Value";
       return [
       { label: "Listing Price", value: money(selected.market.listingPrice) },
       { label: "Zestimate", value: money(selected.market.estimatedValue) },
@@ -555,18 +551,6 @@ export default function Page() {
           selected.verified.lastPriceChangeDirection,
           selected.verified.lastPriceChangeDate
         ),
-      },
-      {
-        label: `${comparableLabel} · 1 Mile (${selected.market.nearby1MileCount} comps)`,
-        value: money(selected.market.nearby1Mile),
-      },
-      {
-        label: `${comparableLabel} · 3 Miles (${selected.market.nearby3MileCount} comps)`,
-        value: money(selected.market.nearby3Mile),
-      },
-      {
-        label: `${comparableLabel} · 5 Miles (${selected.market.nearby5MileCount} comps)`,
-        value: money(selected.market.nearby5Mile),
       },
       { label: "Market Position", value: selected.market.valueVsMarket },
     ];
